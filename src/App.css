@@ -534,12 +534,14 @@
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: stretch;
   background:
     radial-gradient(circle at 20% 20%, rgba(99,102,241,0.07), transparent 45%),
     radial-gradient(circle at 80% 80%, rgba(52,211,153,0.05), transparent 45%),
     var(--bg-base);
+  border-right: 1px solid var(--border);
 }
 
 .workspace-placeholder {
@@ -556,6 +558,26 @@
 .workspace-placeholder p {
   font-size: 0.9rem;
   line-height: 1.55;
+}
+
+.workspace-viewer {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.model-canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.workspace-status-note {
+  border-top: 1px solid var(--border);
+  background: rgba(17, 19, 24, 0.8);
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  text-align: center;
+  padding: 6px 10px;
 }
 
 /* ── Tab Bar ────────────────────────────────────────────────────────────── */

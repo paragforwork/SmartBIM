@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import './App.css'
+import ModelViewer3D from './components/ModelViewer3D'
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 const PYODIDE_CDN = 'https://cdn.jsdelivr.net/pyodide/v0.28.3/full/pyodide.js'
@@ -439,6 +440,8 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen]   = useState(true)
   const [savingIfc, setSavingIfc] = useState(false)
   const [loadedFileName, setLoadedFileName] = useState('updated-model')
+  const [modelGeometry, setModelGeometry] = useState([])
+  const [geometryLoading, setGeometryLoading] = useState(false)
   const fileInputRef = useRef(null)
   const pyodideRef   = useRef(null)
 
@@ -509,6 +512,7 @@ await micropip.install("${WHL_PATH}", keep_going=True)
     setSelectedGuid(null)
     setProperties(null)
     setSpatialTree(null)
+    setModelGeometry([])
 
     try {
       setEngineStatus('loading_file')
@@ -530,6 +534,22 @@ await micropip.install("${WHL_PATH}", keep_going=True)
       const treeRaw = py.globals.get('_result')
       const tree = JSON.parse(treeRaw)
       setSpatialTree(tree)
+
+      // Build geometry payload for Three.js viewer
+      setGeometryLoading(true)
+      try {
+        await py.runPythonAsync('get_model_geometry()')
+        const geomRaw = py.globals.get('_result')
+        const geomResponse = JSON.parse(geomRaw)
+        if (geomResponse.error) throw new Error(geomResponse.error)
+        setModelGeometry(Array.isArray(geomResponse.elements) ? geomResponse.elements : [])
+      } catch (geomError) {
+        setModelGeometry([])
+        setErrorMsg(`3D geometry unavailable: ${geomError.message}`)
+      } finally {
+        setGeometryLoading(false)
+      }
+
       setEngineStatus('done')
     } catch (e) {
       setEngineStatus('error')
@@ -807,8 +827,8 @@ await micropip.install("${WHL_PATH}", keep_going=True)
 
         {/* ── CENTER WORKSPACE ── */}
         <section className="workspace-panel">
-          <div className="workspace-placeholder">
-            {!isLoaded ? (
+          {!isLoaded ? (
+            <div className="workspace-placeholder">
               <>
                 <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
                   <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z" />
@@ -816,21 +836,41 @@ await micropip.install("${WHL_PATH}", keep_going=True)
                 </svg>
                 <p>Upload an IFC file to start exploring your model</p>
               </>
-            ) : (
+            </div>
+          ) : (
+            <div className="workspace-viewer">
+              {geometryLoading ? (
+                <div className="workspace-placeholder">
+                  <Spinner />
+                  <p>Building 3D geometry…</p>
+                </div>
+              ) : modelGeometry.length > 0 ? (
+                <ModelViewer3D
+                  elements={modelGeometry}
+                  selectedGuid={selectedGuid}
+                  onSelect={handleSelect}
+                />
+              ) : (
+                <div className="workspace-placeholder">
+                  <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <line x1="3" y1="9" x2="21" y2="9" />
+                    <line x1="9" y1="3" x2="9" y2="21" />
+                  </svg>
+                  <p>No renderable 3D geometry found in this model.</p>
+                </div>
+              )}
+            </div>
+          )}
+          {!isLoaded && (
+            <div className="workspace-status-note">
               <>
-                <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <line x1="3" y1="9" x2="21" y2="9" />
-                  <line x1="9" y1="3" x2="9" y2="21" />
-                </svg>
                 <p>
-                  Model workspace
-                  {selectedGuid ? ' active' : ' ready'}.
-                  Use the right inspector for Properties and Quantity Takeoff.
+                  3D viewer will be available after IFC load.
                 </p>
               </>
-            )}
-          </div>
+            </div>
+          )}
         </section>
 
         {/* ── RIGHT INSPECTOR PANEL ── */}

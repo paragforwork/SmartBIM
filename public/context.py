@@ -7,6 +7,7 @@ JavaScript reads it via: pyodide.globals.get("_result")
 
 import json
 import ifcopenshell
+import ifcopenshell.geom
 
 # ifc_util is imported lazily inside functions to avoid
 # top-level failures from transitive optional dependencies
@@ -355,7 +356,127 @@ def export_ifc_text() -> str:
 
 
 # ---------------------------------------------------------------------------
-# 7. Search / Filter elements
+# 7. Extract model geometry for 3D viewer
+# ---------------------------------------------------------------------------
+def _extract_shape_matrix(shape):
+    """Safely extract 4x4 transform matrix from iterator shape."""
+    identity = [
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    ]
+
+    transformation = getattr(shape, "transformation", None)
+    if not transformation:
+        return identity
+
+    matrix = getattr(transformation, "matrix", None)
+    if matrix is None:
+        return identity
+
+    raw = None
+    if hasattr(matrix, "data"):
+        raw = list(matrix.data)
+    else:
+        try:
+            raw = list(matrix)
+        except Exception:
+            raw = None
+
+    if not raw:
+        return identity
+
+    if len(raw) == 16:
+        return [float(v) for v in raw]
+
+    if len(raw) == 12:
+        # 3x4 affine matrix -> 4x4 (row-major style expansion)
+        return [
+            float(raw[0]), float(raw[1]), float(raw[2]), 0.0,
+            float(raw[3]), float(raw[4]), float(raw[5]), 0.0,
+            float(raw[6]), float(raw[7]), float(raw[8]), 0.0,
+            float(raw[9]), float(raw[10]), float(raw[11]), 1.0,
+        ]
+
+    return identity
+
+
+def get_model_geometry() -> str:
+    """
+    Extract raw IFC mesh geometry for React Three Fiber.
+    Returns per-element rows: guid, vertices, edges, faces, normals, matrix.
+    """
+    global _ifc_model, _result
+
+    if _ifc_model is None:
+        _result = json.dumps({"error": "No model loaded"})
+        return _result
+
+    try:
+        settings = ifcopenshell.geom.settings()
+        settings.set(settings.WELD_VERTICES, False)
+        settings.set(settings.USE_WORLD_COORDS, False)
+
+        iterator = ifcopenshell.geom.iterator(settings, _ifc_model, 1)
+        ok = iterator.initialize()
+        if not ok:
+            _result = json.dumps({"status": "ok", "elements": []})
+            return _result
+
+        elements = []
+        while True:
+            shape = iterator.get()
+            if shape is not None:
+                guid = getattr(shape, "guid", None)
+                geometry = getattr(shape, "geometry", None)
+                if guid and geometry is not None:
+                    try:
+                        vertices = list(getattr(geometry, "verts", []) or [])
+                        faces = list(getattr(geometry, "faces", []) or [])
+                        normals = list(getattr(geometry, "normals", []) or [])
+                        edges = list(getattr(geometry, "edges", []) or [])
+                        if len(vertices) >= 9 and len(faces) >= 3:
+                            ifc_type = None
+                            item = getattr(shape, "item", None)
+                            if item is not None:
+                                try:
+                                    ifc_type = item.is_a()
+                                except Exception:
+                                    ifc_type = None
+
+                            if not ifc_type:
+                                try:
+                                    elem = _ifc_model.by_guid(guid)
+                                    ifc_type = elem.is_a() if elem else None
+                                except Exception:
+                                    ifc_type = None
+
+                            elements.append({
+                                "guid": guid,
+                                "type": ifc_type,
+                                "vertices": vertices,
+                                "edges": edges,
+                                "faces": faces,
+                                "normals": normals,
+                                "matrix": _extract_shape_matrix(shape),
+                            })
+                    except Exception:
+                        # Skip malformed geometry rows, continue iteration.
+                        pass
+
+            if not iterator.next():
+                break
+
+        _result = json.dumps({"status": "ok", "elements": elements})
+        return _result
+    except Exception as e:
+        _result = json.dumps({"error": str(e)})
+        return _result
+
+
+# ---------------------------------------------------------------------------
+# 8. Search / Filter elements
 # ---------------------------------------------------------------------------
 def search_elements(query: str) -> str:
     """
