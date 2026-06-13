@@ -438,6 +438,7 @@ export default function App() {
 
   const [sidebarWidth, setSidebarWidth] = useState(300)
   const [sidebarOpen, setSidebarOpen]   = useState(true)
+  const [inspectorWidth, setInspectorWidth] = useState(500)
   const [savingIfc, setSavingIfc] = useState(false)
   const [loadedFileName, setLoadedFileName] = useState('updated-model')
   const [modelGeometry, setModelGeometry] = useState([])
@@ -461,6 +462,22 @@ export default function App() {
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
   }, [sidebarWidth])
+
+  const onInspectorDragStart = useCallback((e) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = inspectorWidth
+    const onMove = (ev) => {
+      const delta = ev.clientX - startX
+      setInspectorWidth(Math.max(320, Math.min(720, startW - delta)))
+    }
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [inspectorWidth])
 
   // ── Boot Pyodide ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -874,7 +891,12 @@ await micropip.install("${WHL_PATH}", keep_going=True)
         </section>
 
         {/* ── RIGHT INSPECTOR PANEL ── */}
-        <aside className="content-panel">
+        <div
+          className="content-panel-resizer"
+          onMouseDown={onInspectorDragStart}
+          title="Drag to resize properties panel"
+        />
+        <aside className="content-panel" style={{ '--panel-width': `${inspectorWidth}px` }}>
           {/* Tab bar */}
           <div className="tab-bar">
             <button
